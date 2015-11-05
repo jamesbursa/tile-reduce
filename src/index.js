@@ -52,8 +52,7 @@ function tileReduce(options) {
       bar.total = tiles.length;
       bar.tick(0);
     } else {
-      tileStream = fs.createReadStream(options.tiles);
-      tileStream.pipe(tileTransform);
+      tileStream = fs.createReadStream(options.tiles).pipe(tileTransform);
     }
 
     tileStream.pipe(workerstream)

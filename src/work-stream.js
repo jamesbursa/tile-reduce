@@ -6,7 +6,7 @@ module.exports = function(workers) {
   var tilesSent = 0;
   var tilesReceived = 0;
 
-  var stream = through2.obj({allowHalfOpen: true},
+  var stream = through2.obj(
     // ._transform function. Handles piped data
     function(chunk, enc, callback) {
       var worker = workers[tilesSent % workers.length];
