@@ -2,6 +2,7 @@
 
 var queue = require('queue-async');
 var map = require(process.argv[2]);
+var split = require('split');
 
 var q = queue();
 var sources = [];
@@ -21,8 +22,9 @@ q.await(function(err) {
   else process.send({ready: true});
 });
 
-process.on('message', function(tile) {
+process.stdin.pipe(split()).on('data', function (tile) {
   var q = queue();
+  tile = JSON.parse(tile);
 
   for (var i = 0; i < sources.length; i++) {
     q.defer(sources[i].getTile, tile);

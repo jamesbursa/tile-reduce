@@ -6,7 +6,7 @@ var ProgressBar = require('progress');
 
 var EventEmitter = require('events').EventEmitter;
 var cpus = require('os').cpus().length;
-var fork = require('child_process').fork;
+var spawn = require('child_process').spawn;
 var path = require('path');
 var fs = require('fs');
 var split = require('split');
@@ -22,13 +22,10 @@ function tileReduce(options) {
   var workers = [];
   var workersReady = 0;
   var tileStream = null;
-  var tilesDone = 0;
-  var tilesSent = 0;
-  var pauseLimit = 5000;
 
   for (var i = 0; i < cpus - 1; i++) {
-    var worker = fork(path.join(__dirname, 'worker.js'), [options.map, JSON.stringify(options.sources)]);
-    worker.on('message', handleMessage);
+    var worker = spawn('node', [path.join(__dirname, 'worker.js'), options.map, JSON.stringify(options.sources)], {stdio: ['pipe', 1, 2, 'ipc']});
+    worker.once('message', handleMessage);
     workers.push(worker);
   }
 
@@ -60,24 +57,14 @@ function tileReduce(options) {
       tileStream.pipe(tileTransform).pipe(workstream);
     }
 
-    workstream.on('data', reduce);
+    workstream.on('data', reduce).on('finish', shutdown);
   }
 
-  function handleTile(tile) {
-    workers[tilesSent++ % workers.length].send(tile);
-    if (!tileStream.isPaused() && tilesSent - tilesDone > pauseLimit) tileStream.pause();
-    if (bar.total < tilesSent) {
-      bar.total = tilesSent;
-      bar.tick(0);
-    }
-  }
 
   function reduce(value) {
-    console.log('reducing')
+    bar.total++
     bar.tick();
     if (value !== null && value !== undefined) ee.emit('reduce', value);
-    if (tileStream.isPaused() && tilesSent - tilesDone < (pauseLimit / 2)) tileStream.resume();
-    if (++tilesDone === tilesSent) shutdown();
   }
 
   function shutdown() {
