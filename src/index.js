@@ -12,6 +12,7 @@ var fs = require('fs');
 var split = require('split');
 var cover = require('./cover');
 var streamArray = require('stream-array');
+var WorkStream = require('./work-stream');
 
 var tileTransform = split(function(line) {
   return line.split(' ').map(Number);
@@ -31,9 +32,10 @@ function tileReduce(options) {
     workers.push(worker);
   }
 
+  var workstream = WorkStream(workers);
+
   function handleMessage(message) {
-    if (message.reduce) reduce(message.value);
-    else if (message.ready && ++workersReady === workers.length) run();
+    if (message.ready && ++workersReady === workers.length) run();
   }
 
   var bar = new ProgressBar(':current / :total tiles (:percent), :elapseds elapsed [:bar] ', {
@@ -55,8 +57,10 @@ function tileReduce(options) {
       bar.tick(0);
     } else {
       tileStream = fs.createReadStream(options.tiles);
-      tileStream.pipe(tileTransform).on('data', handleTile);
+      tileStream.pipe(tileTransform).pipe(workstream);
     }
+
+    workstream.on('data', reduce);
   }
 
   function handleTile(tile) {
@@ -69,6 +73,7 @@ function tileReduce(options) {
   }
 
   function reduce(value) {
+    console.log('reducing')
     bar.tick();
     if (value !== null && value !== undefined) ee.emit('reduce', value);
     if (tileStream.isPaused() && tilesSent - tilesDone < (pauseLimit / 2)) tileStream.resume();
