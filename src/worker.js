@@ -22,7 +22,7 @@ q.await(function(err) {
   else process.send({ready: true});
 });
 
-process.stdin.pipe(split()).on('data', function (tile) {
+process.stdin.pipe(split()).on('data', function(tile) {
   var q = queue();
   tile = JSON.parse(tile);
 

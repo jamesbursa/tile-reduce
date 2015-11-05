@@ -1,56 +1,43 @@
+'use strict';
+
 var through2 = require('through2');
-var queue = require('queue-async');
 
-module.exports = function (workers) {
-  var queuedLimit = 1000;
+module.exports = function(workers) {
   var tilesSent = 0;
-  var tilesRecieved = 0;
+  var tilesReceived = 0;
 
-  var streamHandler = function (chunk, enc, callback) {
-    var worker = lowestQueue();
+  var stream = through2.obj({allowHalfOpen: true},
+    // ._transform function. Handles piped data
+    function(chunk, enc, callback) {
+      var worker = workers[tilesSent % workers.length];
 
-    // If we've overqueued, retry
-    if (worker.queueLength > queuedLimit) {
-      return setImmediate(function () { streamHandler(chunk, enc, callback); });
+      tilesSent++;
+      var stat = worker.stdin.write(JSON.stringify(chunk) + '\n');
+
+      // wait for drain if this worker is overloaded. Technically, this will
+      // block all workers. but since we split work ~evenly it shouldn't be a problem
+      if (!stat) worker.stdin.once('drain', callback);
+      else callback();
+    },
+    function(callback) {
+      // TODO: making up an event and tacking it onto this stream feels weird and bad
+      stream.on('final-data', callback);
     }
+  );
 
-    tilesSent++;
-    worker.queueLength++;
-    worker.stdin.write(JSON.stringify(chunk)+'\n');
-    callback();
-  };
- 
-  var streamFlush = function (callback) {
-    stream.on('final-data', callback)
-  } 
-  var stream = through2.obj(streamHandler, streamFlush);
-
-  for (var i = 0; i < workers.length; i++) {
-    workers[i].queueLength = 0;
-    workers[i].on('message', function(message) {
-      if (!message.reduce) return;
-      this.queueLength--;
-      stream.push(message);
-      if (++tilesRecieved >= tilesSent && tilesSent > 0) {
-        stream.end();
-        stream.emit('final-data')
-      }
-    });
+  // handles messages back from workers
+  function handleMessage(message) {
+    if (!message.reduce) return;
+    stream.push({value: message.value, tilesSent: tilesSent});
+    if (++tilesReceived >= tilesSent && tilesSent > 0) {
+      stream.end();
+      stream.emit('final-data');
+    }
   }
 
-  var lowestQueue = function() {
-    var min = Infinity;
-    var lowest = null;
-    for (var i = 0; i < workers.length; i++) {
-      // If this one is zero, go ahead and pick it.
-      if (workers[i].queueLength === 0) return workers[i];
-      if (workers[i].queueLength < min) {
-        min = workers[i].queueLength;
-        lowest = workers[i];
-      }
-    }
-    return lowest;
+  for (var i = 0; i < workers.length; i++) {
+    workers[i].on('message', handleMessage);
   }
 
   return stream;
-}
+};
