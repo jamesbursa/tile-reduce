@@ -28,8 +28,6 @@ test('count implementation, bbox cover', function(t) {
     sources: sources,
     log: false
   })
-  .on('start', function() {
-  })
   .on('reduce', function(num) {
     numFeatures += num;
   })
