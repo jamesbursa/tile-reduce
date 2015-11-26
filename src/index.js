@@ -112,7 +112,7 @@ function tileReduce(options) {
   function handleTile(tile) {
     var workerId = tilesSent++ % workers.length;
     ee.emit('map', tile, workerId);
-    workers[workerId].send(tile);
+    workers[workerId].send({tile: tile, args: options.mapArgs});
     if (!paused && tilesSent - tilesDone > pauseLimit) {
       paused = true;
       tileStream.pause();

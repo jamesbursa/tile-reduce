@@ -25,7 +25,8 @@ q.awaitAll(function(err, results) {
   process.send({ready: true});
 });
 
-process.on('message', function(tile) {
+process.on('message', function(message) {
+  var tile = message.tile;
   var q = queue();
 
   for (var i = 0; i < sources.length; i++) {
@@ -48,7 +49,7 @@ process.on('message', function(tile) {
       process.send({reduce: true, value: value, tile: tile});
     }
 
-    map(data, tile, write, gotResults);
+    map(data, tile, write, gotResults, message.args);
   }
 });
 
