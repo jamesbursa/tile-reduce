@@ -32,10 +32,12 @@ function tileReduce(options) {
     // https://github.com/substack/stream-handbook#classic-readable-streams
     options.tileStream = options.tileStream.pipe(through.obj());
   }
+  var maxWorkers = Math.min(cpus, options.maxWorkers || cpus);
+  log('Starting up ' + maxWorkers + ' workers... ');
 
-  log('Starting up ' + cpus + ' workers... ');
+  if (options.output) options.output.setMaxListeners(0);
 
-  for (var i = 0; i < cpus; i++) {
+  for (var i = 0; i < maxWorkers; i++) {
     var worker = fork(path.join(__dirname, 'worker.js'), [options.map, JSON.stringify(options.sources)], {silent: true});
     worker.stdout.pipe(binarysplit('\x1e')).pipe(options.output || process.stdout);
     worker.stderr.pipe(process.stderr);
@@ -49,6 +51,7 @@ function tileReduce(options) {
   }
 
   var ee = new EventEmitter();
+  ee.workers = workers;
   var timer;
 
   function run() {
@@ -62,13 +65,17 @@ function tileReduce(options) {
     if (tiles) {
       // JS tile array, GeoJSON or bbox
       log('Processing ' + tiles.length + ' tiles.\n');
-      tileStream = streamArray(tiles).on('data', handleTile);
+      tileStream = streamArray(tiles)
+        .on('data', handleTile)
+        .on('end', streamEnded);
 
     } else if (options.tileStream) {
       log('Processing tile coords from tile stream.\n');
       tileStream = options.tileStream;
-      tileStream.on('data', handleTileStreamLine);
-      tileStream.resume();
+      tileStream
+        .on('data', handleTileStreamLine)
+        .on('end', streamEnded)
+        .resume();
     } else {
       // try to get tiles from mbtiles (either specified by sourceCover or first encountered)
       var source;
@@ -81,7 +88,10 @@ function tileReduce(options) {
         log('Processing tile coords from "' + source.name + '" source.\n');
         var db = new MBTiles(source.mbtiles, function(err) {
           if (err) throw err;
-          tileStream = db.createZXYStream().pipe(binarysplit()).on('data', handleZXYLine);
+          tileStream = db.createZXYStream()
+            .pipe(binarysplit('\n'))
+            .on('data', handleZXYLine)
+            .on('end', streamEnded);
         });
 
       } else {
@@ -93,6 +103,11 @@ function tileReduce(options) {
   }
 
   var paused = false;
+  var ended = false;
+
+  function streamEnded() {
+    ended = true;
+  }
 
   function handleTile(tile) {
     var workerId = tilesSent++ % workers.length;
@@ -123,7 +138,7 @@ function tileReduce(options) {
       paused = false;
       tileStream.resume();
     }
-    if (++tilesDone === tilesSent) shutdown();
+    if (++tilesDone === tilesSent && ended) shutdown();
   }
 
   function shutdown() {
